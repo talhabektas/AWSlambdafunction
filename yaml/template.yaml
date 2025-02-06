@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS IoT Tabanlı Depo İzleme Sistemi - CloudFormation Template
+
+Resources:
+  # IoT Rule (Listen MQTT Topic)
+  IoTDepoRule:
+    Type: AWS::IoT::TopicRule
+    Properties:
+      RuleName: DepoVeriRule
+      TopicRulePayload:
+        Sql: "SELECT * FROM 'depo/veri'"
+        Actions:
+          - Lambda:
+              FunctionArn: !GetAtt DepoLambdaFunction.Arn
+
+  # Lambda Fonksiyonu
+  DepoLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: DepoAlarmLambda
+      Runtime: python3.12
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          # Lambda code
+      Timeout: 30
+      Environment:
+        Variables:
+          S3_BUCKET_NAME: "depo-grafikler-bucket"
+          SNS_TOPIC_ARN: !Ref DepoAlarmSNSTopic
+
+  # Lambda Execution Role (IAM)
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DepoLambdaRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLambdaExecute
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/AmazonSNSFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  # DynamoDB Table
+  DepoVerileriTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: DepoVerileri
+      AttributeDefinitions:
+        - AttributeName: device_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: device_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+
+  # SNS Topic (Alarm Notifications)
+  DepoAlarmSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: DepoAlarmlari
+      Subscription:
+        - Protocol: email
+          Endpoint: "your-email@example.com"  # e-mail address
+
+  # S3 Bucket 
+  DepoGrafiklerBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: depo-grafikler-bucket
+
+Outputs:
+  SNSTopicARN:
+    Description: SNS Topic ARN
+    Value: !Ref DepoAlarmSNSTopic
+  S3BucketName:
+    Description: Grafiklerin Kaydedileceği Bucket
+    Value: !Ref DepoGrafiklerBucket
